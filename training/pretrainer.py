@@ -40,8 +40,8 @@ class PreTrainer:
             A_delta = self._construct_A_delta(unlearn_edges, dataset.num_users, dataset.num_items)
             A_r = self._construct_A_r(remaining_edges, dataset.num_users, dataset.num_items)
             
-            # Get original embeddings
-            E_original = self.model.get_initial_embeddings()
+            # Get original embeddings (ensure they're on the correct device)
+            E_original = self.model.get_initial_embeddings().to(self.device)
             
             # Forward pass through influence encoder
             E0_updated = self.influence_encoder(A_delta, E_original)

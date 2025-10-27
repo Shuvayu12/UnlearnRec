@@ -453,7 +453,22 @@ def main():
     
     # Get device
     device = get_device(args.device)
+    print(f"\n{'='*80}")
+    print("Device Information")
+    print(f"{'='*80}")
+    print(f"PyTorch version: {torch.__version__}")
+    print(f"CUDA available: {torch.cuda.is_available()}")
+    if torch.cuda.is_available():
+        print(f"CUDA version: {torch.version.cuda}")
+        print(f"CUDA device count: {torch.cuda.device_count()}")
+        print(f"Current CUDA device: {torch.cuda.current_device()}")
+        print(f"CUDA device name: {torch.cuda.get_device_name(0)}")
     print(f"Using device: {device}")
+    
+    # Verify device is actually CUDA if requested
+    if args.device == 'cuda' and not torch.cuda.is_available():
+        print("\n⚠️  WARNING: CUDA requested but not available! Falling back to CPU.")
+        print("Make sure GPU is enabled in Kaggle notebook settings.")
     
     # Load dataset
     print("\n" + "="*80)

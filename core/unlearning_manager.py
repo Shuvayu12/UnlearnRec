@@ -56,8 +56,8 @@ class UnlearningManager:
         A_delta = self.construct_influence_dependency_matrix(unlearn_edges, num_users, num_items)
         A_r = self.construct_residual_adjacency(all_edges, unlearn_edges, num_users, num_items)
         
-        # Get original embeddings
-        E_original = self.model.get_initial_embeddings()
+        # Get original embeddings (ensure they're on the correct device)
+        E_original = self.model.get_initial_embeddings().to(self.device)
         
         # Apply influence encoder
         with torch.no_grad():

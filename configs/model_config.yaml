@@ -1,0 +1,38 @@
+# Model-specific configurations
+
+LightGCN:
+  embedding_dim: 64
+  num_layers: 3
+  learning_rate: 0.001
+  weight_decay: 1e-4
+
+SGL:
+  embedding_dim: 64
+  num_layers: 3
+  contrastive_temp: 0.2
+  drop_ratio: 0.1
+  learning_rate: 0.001
+
+SimGCL:
+  embedding_dim: 64
+  num_layers: 3
+  contrastive_temp: 0.2
+  noise_eps: 0.1
+  learning_rate: 0.001
+
+InfluenceEncoder:
+  num_layers_ie: 3
+  num_layers_mlp: 2
+  learning_rate: 0.001
+
+# Dataset configurations
+datasets:
+  Movielens-1M:
+    path: "data/movielens/ml-1m/ratings.dat"
+    test_ratio: 0.2
+  Gowalla:
+    path: "data/gowalla/Gowalla_totalCheckins.txt"
+    test_ratio: 0.2
+  Yelp2018:
+    path: "data/yelp/yelp2018.mat"
+    test_ratio: 0.2

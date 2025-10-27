@@ -1,0 +1,28 @@
+# High-performance configuration for full experiments
+# Use with: python train_and_evaluate.py --config configs/full_experiment.yaml
+
+# Model parameters
+embedding_dim: 128
+num_layers: 4
+num_layers_ie: 3
+num_layers_mlp: 3
+
+# Loss weights
+lambda_u: 1.5
+lambda_p: 1.0
+lambda_c: 0.01
+
+# Training parameters
+num_pretrain_epochs: 200
+unlearn_ratio: 0.05
+fine_tune: true
+fine_tune_epochs: 10
+learning_rate: 0.0005
+batch_size: 1024
+
+# Dataset parameters
+test_ratio: 0.2
+unlearn_test_ratio: 0.1
+
+# Evaluation
+eval_k: 20

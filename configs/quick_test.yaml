@@ -1,0 +1,28 @@
+# Example configuration for quick testing
+# Use with: python train_and_evaluate.py --config configs/quick_test.yaml
+
+# Model parameters
+embedding_dim: 32
+num_layers: 2
+num_layers_ie: 2
+num_layers_mlp: 2
+
+# Loss weights
+lambda_u: 1.0
+lambda_p: 1.0
+lambda_c: 0.01
+
+# Training parameters
+num_pretrain_epochs: 10  # Quick test
+unlearn_ratio: 0.05
+fine_tune: true
+fine_tune_epochs: 2
+learning_rate: 0.001
+batch_size: 256
+
+# Dataset parameters
+test_ratio: 0.2
+unlearn_test_ratio: 0.05
+
+# Evaluation
+eval_k: 10

@@ -1,8 +1,13 @@
 """
 Command-line interface for training and evaluating UnlearnRec
 """
-import argparse
+import sys
 import os
+
+# Add the current directory to Python path for module imports
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+import argparse
 import json
 import torch
 import yaml

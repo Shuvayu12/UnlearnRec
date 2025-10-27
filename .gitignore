@@ -39,17 +39,25 @@ env/
 .ipynb_checkpoints
 *.ipynb
 
-# Data files
-data/
-!data/.gitkeep
+# Data files (exclude downloaded datasets but keep Python files)
+data/*.csv
+data/*.dat
+data/*.zip
+data/*.gz
+data/*.txt
+data/ml-*
+data/gowalla*
+data/yelp*
 
-# Model checkpoints
-checkpoints/
-!checkpoints/.gitkeep
+# Model checkpoints (exclude saved models)
+checkpoints/*.pt
+checkpoints/*.pth
+checkpoints/*.ckpt
 
-# Results
-results/
-!results/.gitkeep
+# Results (exclude result files)
+results/*.json
+results/*.csv
+results/*.txt
 
 # Logs
 *.log

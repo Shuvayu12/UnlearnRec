@@ -28,18 +28,24 @@ class PreTrainer:
             'contrast_loss': []
         }
         
+        # Convert all edges to tensor once (outside loop)
+        all_edges_tensor = torch.tensor(dataset.all_edges, dtype=torch.long, device=self.device)
+        
         for epoch in tqdm(range(num_pretrain_epochs), desc="Pre-training"):
             # Sample simulated unlearning set
-            unlearn_edges = self._sample_unlearn_edges(
-                dataset.all_edges, 
-                ratio=unlearn_ratio
-            )
-            unlearn_edges_set = {tuple(edge) for edge in unlearn_edges}  # Set for faster lookups
-            remaining_edges = [e for e in dataset.all_edges if tuple(e) not in unlearn_edges_set]
+            num_unlearn = int(len(dataset.all_edges) * unlearn_ratio)
+            unlearn_indices = torch.randperm(len(dataset.all_edges), device=self.device)[:num_unlearn]
+            
+            # Create mask for remaining edges (all True except unlearned)
+            mask = torch.ones(len(dataset.all_edges), dtype=torch.bool, device=self.device)
+            mask[unlearn_indices] = False
+            
+            unlearn_edges_tensor = all_edges_tensor[unlearn_indices]
+            remaining_edges_tensor = all_edges_tensor[mask]
             
             # Construct matrices
-            A_delta = self._construct_A_delta(unlearn_edges, dataset.num_users, dataset.num_items)
-            A_r = self._construct_A_r(remaining_edges, dataset.num_users, dataset.num_items)
+            A_delta = self._construct_A_delta(unlearn_edges_tensor, dataset.num_users, dataset.num_items)
+            A_r = self._construct_A_r(remaining_edges_tensor, dataset.num_users, dataset.num_items)
             
             # Get original embeddings (ensure they're on the correct device)
             E_original = self.model.get_initial_embeddings().to(self.device)
@@ -57,8 +63,8 @@ class PreTrainer:
                 E0_updated=E0_updated,
                 A_r=A_r,
                 original_embeddings=E_original,
-                unlearn_edges=unlearn_edges,
-                remaining_edges=remaining_edges,
+                unlearn_edges=unlearn_edges_tensor,
+                remaining_edges=remaining_edges_tensor,
                 A_delta=A_delta,
                 H=H
             )
@@ -83,14 +89,13 @@ class PreTrainer:
         indices = torch.randperm(len(all_edges))[:num_unlearn]
         return [all_edges[i] for i in indices]
     
-    def _construct_A_delta(self, unlearn_edges, num_users, num_items):
+    def _construct_A_delta(self, edges_tensor, num_users, num_items):
         """Construct influence dependency matrix"""
         num_nodes = num_users + num_items
         A_delta = torch.zeros((num_nodes, num_nodes), device=self.device)
         
-        if len(unlearn_edges) > 0:
-            # Vectorized edge construction
-            edges_tensor = torch.tensor(unlearn_edges, device=self.device)
+        if len(edges_tensor) > 0:
+            # edges_tensor is already on device
             users = edges_tensor[:, 0]
             items = edges_tensor[:, 1] + num_users
             
@@ -100,14 +105,13 @@ class PreTrainer:
             
         return A_delta
     
-    def _construct_A_r(self, remaining_edges, num_users, num_items):
+    def _construct_A_r(self, edges_tensor, num_users, num_items):
         """Construct residual adjacency matrix"""
         num_nodes = num_users + num_items
         A_r = torch.zeros((num_nodes, num_nodes), device=self.device)
         
-        if len(remaining_edges) > 0:
-            # Vectorized edge construction
-            edges_tensor = torch.tensor(remaining_edges, device=self.device)
+        if len(edges_tensor) > 0:
+            # edges_tensor is already on device
             users = edges_tensor[:, 0]
             items = edges_tensor[:, 1] + num_users
             

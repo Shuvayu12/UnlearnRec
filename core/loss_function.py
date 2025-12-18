@@ -36,42 +36,56 @@ class UnlearnRecLoss(nn.Module):
         """
         Enforce decrease in predicted scores for unlearned edges (Eq. 20)
         """
-        loss = 0
-        for u, v in unlearn_edges:
-            score = predictions[u, v]
-            # We want scores to be negative (low probability)
-            loss += -torch.log(torch.sigmoid(-score))
+        if len(unlearn_edges) == 0:
+            return torch.tensor(0.0, device=predictions.device)
         
-        return loss / len(unlearn_edges) if len(unlearn_edges) > 0 else torch.tensor(0.0)
+        # Handle both tensor and list inputs
+        if isinstance(unlearn_edges, torch.Tensor):
+            users = unlearn_edges[:, 0]
+            items = unlearn_edges[:, 1]
+        else:
+            users = torch.tensor([u for u, _ in unlearn_edges], device=predictions.device)
+            items = torch.tensor([v for _, v in unlearn_edges], device=predictions.device)
+        
+        scores = predictions[users, items]
+        loss = -torch.log(torch.sigmoid(-scores)).mean()
+        
+        return loss
     
     def preserving_loss(self, original_embeddings, updated_embeddings, remaining_edges, tau=1.0):
         """
         Preserve embedding distribution of remaining positive pairs (Eq. 21-22)
+        Simplified to use MSE between embeddings for computational efficiency
         """
-        def compute_distribution_vector(embeddings, edges):
-            vectors = []
-            for u, v in edges:
-                sim = torch.dot(embeddings[u], embeddings[v]) / tau
-                # Compute softmax over all positive pairs for this user
-                user_edges = [(u, v_j) for (u_i, v_j) in edges if u_i == u]
-                if len(user_edges) > 1:
-                    similarities = []
-                    for u_i, v_j in user_edges:
-                        sim_j = torch.dot(embeddings[u_i], embeddings[v_j]) / tau
-                        similarities.append(sim_j)
-                    similarities = torch.stack(similarities)
-                    softmax_probs = F.softmax(similarities, dim=0)
-                    # Find index of current edge
-                    idx = user_edges.index((u, v))
-                    vectors.append(torch.log(softmax_probs[idx] + 1e-8))
-            return torch.stack(vectors) if vectors else torch.tensor(0.0)
+        if len(remaining_edges) == 0:
+            return torch.tensor(0.0, device=original_embeddings.device)
         
-        orig_dist = compute_distribution_vector(original_embeddings, remaining_edges)
-        updated_dist = compute_distribution_vector(updated_embeddings, remaining_edges)
+        # Sample a subset if too large (for computational efficiency)
+        max_edges = 5000
+        if isinstance(remaining_edges, torch.Tensor):
+            num_edges = len(remaining_edges)
+            if num_edges > max_edges:
+                indices = torch.randperm(num_edges, device=remaining_edges.device)[:max_edges]
+                edges_sample = remaining_edges[indices]
+            else:
+                edges_sample = remaining_edges
+            users = edges_sample[:, 0]
+            items = edges_sample[:, 1]
+        else:
+            num_edges = len(remaining_edges)
+            if num_edges > max_edges:
+                import random
+                edges_sample = random.sample(remaining_edges, max_edges)
+            else:
+                edges_sample = remaining_edges
+            users = torch.tensor([u for u, _ in edges_sample], device=original_embeddings.device)
+            items = torch.tensor([v for _, v in edges_sample], device=original_embeddings.device)
         
-        if isinstance(orig_dist, torch.Tensor) and isinstance(updated_dist, torch.Tensor):
-            return F.mse_loss(updated_dist, orig_dist)
-        return torch.tensor(0.0)
+        # Compute similarity preservation between original and updated
+        orig_sim = (original_embeddings[users] * original_embeddings[items]).sum(dim=1)
+        updated_sim = (updated_embeddings[users] * updated_embeddings[items]).sum(dim=1)
+        
+        return F.mse_loss(updated_sim, orig_sim)
     
     def contrast_loss(self, H, A_delta, dropout_rate=0.1):
         """

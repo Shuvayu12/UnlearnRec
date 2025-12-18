@@ -46,15 +46,26 @@ class BaseGNN(nn.Module):
     
     def compute_bpr_loss(self, predictions, positive_edges):
         """Compute BPR loss"""
-        loss = 0
-        for u, i in positive_edges:
-            # Sample negative item
-            j = torch.randint(0, self.num_items, (1,)).item()
-            x_ui = predictions[u, i]
-            x_uj = predictions[u, j]
-            loss += -torch.log(torch.sigmoid(x_ui - x_uj))
+        if len(positive_edges) == 0:
+            return torch.tensor(0.0, device=predictions.device)
         
-        return loss / len(positive_edges) if len(positive_edges) > 0 else torch.tensor(0.0)
+        # Handle both tensor and list inputs
+        if isinstance(positive_edges, torch.Tensor):
+            users = positive_edges[:, 0]
+            items = positive_edges[:, 1]
+        else:
+            users = torch.tensor([u for u, _ in positive_edges], device=predictions.device)
+            items = torch.tensor([i for _, i in positive_edges], device=predictions.device)
+        
+        # Sample negative items for each user
+        negative_items = torch.randint(0, self.num_items, (len(users),), device=predictions.device)
+        
+        # Compute BPR loss vectorized
+        x_ui = predictions[users, items]
+        x_uj = predictions[users, negative_items]
+        loss = -torch.log(torch.sigmoid(x_ui - x_uj) + 1e-8).mean()
+        
+        return loss
     
     def _split_embeddings(self, embeddings):
         """Split concatenated embeddings into user and item embeddings"""

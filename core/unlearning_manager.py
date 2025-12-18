@@ -18,12 +18,18 @@ class UnlearningManager:
         num_nodes = num_users + num_items
         A_delta = torch.zeros((num_nodes, num_nodes), device=self.device)
         
-        for u, v in unlearn_edges:
-            # Convert item index to node index
-            v_node = v + num_users
-            A_delta[u, v_node] = 1
-            A_delta[v_node, u] = 1  # Symmetric
-            
+        if len(unlearn_edges) == 0:
+            return A_delta
+        
+        # Vectorized construction (much faster)
+        edges_tensor = torch.tensor(unlearn_edges, dtype=torch.long, device=self.device)
+        users = edges_tensor[:, 0]
+        items = edges_tensor[:, 1] + num_users
+        
+        # Set edges in both directions at once
+        A_delta[users, items] = 1
+        A_delta[items, users] = 1
+        
         return A_delta
     
     def construct_residual_adjacency(self, all_edges: List[Tuple[int, int]], 
@@ -35,13 +41,22 @@ class UnlearningManager:
         num_nodes = num_users + num_items
         A_r = torch.zeros((num_nodes, num_nodes), device=self.device)
         
-        remaining_edges = [edge for edge in all_edges if edge not in unlearn_edges]
+        # Convert to set for fast lookup
+        unlearn_set = set(unlearn_edges)
+        remaining_edges = [edge for edge in all_edges if edge not in unlearn_set]
         
-        for u, v in remaining_edges:
-            v_node = v + num_users
-            A_r[u, v_node] = 1
-            A_r[v_node, u] = 1  # Symmetric
-            
+        if len(remaining_edges) == 0:
+            return A_r
+        
+        # Vectorized construction (much faster)
+        edges_tensor = torch.tensor(remaining_edges, dtype=torch.long, device=self.device)
+        users = edges_tensor[:, 0]
+        items = edges_tensor[:, 1] + num_users
+        
+        # Set edges in both directions at once
+        A_r[users, items] = 1
+        A_r[items, users] = 1
+        
         return A_r
     
     def process_unlearning_request(self, unlearn_edges: List[Tuple[int, int]], 

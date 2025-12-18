@@ -13,10 +13,10 @@ lambda_p: 1.0
 lambda_c: 0.01
 
 # Training parameters
-num_pretrain_epochs: 10  # Quick test
+num_pretrain_epochs: 50  # Increased from 10 for better unlearning
 unlearn_ratio: 0.05
 fine_tune: true
-fine_tune_epochs: 2
+fine_tune_epochs: 5  # Increased from 2
 learning_rate: 0.001
 batch_size: 256
 

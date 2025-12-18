@@ -32,8 +32,8 @@ class InfluenceEncoder(nn.Module):
     
     def reset_parameters(self):
         # Initialize with small values around 0 as mentioned in paper
-        nn.init.normal_(self.H0, mean=0.0, std=0.01)
-        nn.init.constant_(self.W_eta, 0.01)  # Small constant instead of normal
+        nn.init.normal_(self.H0, mean=0.0, std=0.1)  # Increased from 0.01 to 0.1
+        nn.init.normal_(self.W_eta, mean=1.0, std=0.1)  # Start near 1.0 for better gradients
         
         # Initialize MLP layers properly
         for layer in self.mlp:

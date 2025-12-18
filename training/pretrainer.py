@@ -15,10 +15,11 @@ class PreTrainer:
         """
         Pre-train the influence encoder using simulated unlearning requests
         """
+        # Use higher learning rate for pre-training
         optimizer = optim.Adam([
-            {'params': self.influence_encoder.H0},
-            {'params': self.influence_encoder.W_eta}
-        ], lr=0.001)
+            {'params': self.influence_encoder.H0, 'lr': 0.01},
+            {'params': self.influence_encoder.W_eta, 'lr': 0.01}
+        ])
         
         history = {
             'total_loss': [],
@@ -69,13 +70,21 @@ class PreTrainer:
                 H=H
             )
             
-            # Backward pass
+            # Backward pass with gradient clipping
             optimizer.zero_grad()
             loss_dict['total_loss'].backward()
-            optimizer.step()
             
+            # Gradient clipping to prevent exploding gradients
             # Record history
             for key in history:
+                history[key].append(loss_dict[key].item())
+            
+            # Print more frequently for short training
+            print_interval = max(1, num_pretrain_epochs // 10)
+            if epoch % print_interval == 0 or epoch == num_pretrain_epochs - 1:
+                print(f"Epoch {epoch}: Total Loss: {loss_dict['total_loss'].item():.4f}, "
+                      f"BPR: {loss_dict['model_loss'].item():.4f}, "
+                      f"Unlearn: {loss_dict['unlearning_loss'].item():.4f}")
                 history[key].append(loss_dict[key].item())
             
             if epoch % 10 == 0:

@@ -60,10 +60,14 @@ class BaseGNN(nn.Module):
         # Sample negative items for each user
         negative_items = torch.randint(0, self.num_items, (len(users),), device=predictions.device)
         
-        # Compute BPR loss vectorized
+        # Compute BPR loss vectorized with epsilon for stability
         x_ui = predictions[users, items]
         x_uj = predictions[users, negative_items]
-        loss = -torch.log(torch.sigmoid(x_ui - x_uj) + 1e-8).mean()
+        loss = -torch.log(torch.sigmoid(x_ui - x_uj) + 1e-10).mean()
+        
+        # Check for NaN/Inf
+        if torch.isnan(loss) or torch.isinf(loss):
+            return torch.tensor(0.0, device=predictions.device)
         
         return loss
     
@@ -74,13 +78,17 @@ class BaseGNN(nn.Module):
         return user_emb, item_emb
     
     def clone(self):
-        """Create a copy of the model"""
-        return type(self)(
+        """Create a deep copy of the model with weights"""
+        cloned_model = type(self)(
             num_users=self.num_users,
             num_items=self.num_items,
             embedding_dim=self.embedding_dim,
             num_layers=self.num_layers
         )
+        # Copy the trained weights
+        cloned_model.load_state_dict(self.state_dict())
+        cloned_model = cloned_model.to(next(self.parameters()).device)
+        return cloned_model
     
     def update_embeddings(self, new_embeddings, adjacency_matrix):
         """Update model with new embeddings"""

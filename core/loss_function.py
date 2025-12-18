@@ -48,7 +48,12 @@ class UnlearnRecLoss(nn.Module):
             items = torch.tensor([v for _, v in unlearn_edges], device=predictions.device)
         
         scores = predictions[users, items]
-        loss = -torch.log(torch.sigmoid(-scores)).mean()
+        # Add epsilon for numerical stability
+        loss = -torch.log(torch.sigmoid(-scores) + 1e-10).mean()
+        
+        # Check for NaN/Inf
+        if torch.isnan(loss) or torch.isinf(loss):
+            return torch.tensor(0.0, device=predictions.device)
         
         return loss
     
@@ -95,17 +100,28 @@ class UnlearnRecLoss(nn.Module):
         mask = torch.rand_like(A_delta) > dropout_rate
         A_delta_prime = A_delta * mask.float()
         
-        # Compute degree matrix for dropped version
+        # Compute degree matrix for dropped version (avoid dense diagonal)
         degree_prime = torch.sum(A_delta_prime, dim=1)
-        D_delta_prime_sqrt_inv = torch.diag(1.0 / torch.sqrt(degree_prime + 1e-8))
-        A_norm_prime = D_delta_prime_sqrt_inv @ A_delta_prime @ D_delta_prime_sqrt_inv
+        degree_inv_sqrt = torch.pow(degree_prime + 1e-10, -0.5)
+        degree_inv_sqrt = torch.clamp(degree_inv_sqrt, min=0.0, max=1e10)
+        degree_inv_sqrt[torch.isnan(degree_inv_sqrt)] = 0.0
+        degree_inv_sqrt[torch.isinf(degree_inv_sqrt)] = 0.0
+        
+        # Normalized adjacency using element-wise multiplication (not diagonal matrix)
+        A_norm_prime = A_delta_prime * degree_inv_sqrt.view(-1, 1) * degree_inv_sqrt.view(1, -1)
         
         # Compute H' with dropped adjacency
         H_prime = A_norm_prime @ H
         
         # Contrastive alignment (simplified)
         cos_sim = F.cosine_similarity(H, H_prime, dim=1)
-        loss = -torch.log(torch.sigmoid(cos_sim / self.temperature)).mean()
+        # Clamp cosine similarity to avoid extreme values
+        cos_sim = torch.clamp(cos_sim, min=-1.0, max=1.0)
+        loss = -torch.log(torch.sigmoid(cos_sim / self.temperature) + 1e-10).mean()
+        
+        # Check for NaN/Inf
+        if torch.isnan(loss) or torch.isinf(loss):
+            return torch.tensor(0.0, device=H.device)
         
         return loss
     

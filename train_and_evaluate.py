@@ -22,6 +22,7 @@ from models.simgcl import SimGCL
 from core.influence_encoder import InfluenceEncoder
 from core.loss_function import UnlearnRecLoss
 from core.unlearning_manager import UnlearningManager
+from training.base_trainer import BaseModelTrainer
 from training.pretrainer import PreTrainer
 from utils.metrics import UnlearningMetrics
 
@@ -56,12 +57,16 @@ def parse_args():
                         help='Number of MLP layers in Influence Encoder')
     
     # Training parameters
+    parser.add_argument('--num_base_epochs', type=int, default=50,
+                        help='Number of base model training epochs')
     parser.add_argument('--num_pretrain_epochs', type=int, default=100,
                         help='Number of pre-training epochs')
     parser.add_argument('--learning_rate', type=float, default=0.001,
                         help='Learning rate')
     parser.add_argument('--batch_size', type=int, default=512,
                         help='Batch size')
+    parser.add_argument('--reg_weight', type=float, default=1e-4,
+                        help='L2 regularization weight')
     
     # Unlearning parameters
     parser.add_argument('--unlearn_ratio', type=float, default=0.05,
@@ -163,8 +168,41 @@ def train_base_model(args, dataset, device):
     train_edges, test_edges = dataset.split_edges(test_ratio=args.test_ratio)
     print(f"Train edges: {len(train_edges)}, Test edges: {len(test_edges)}")
     
-    # Create training dataset
+    # Convert train edges to tensor
+    train_edges_tensor = torch.tensor(train_edges, dtype=torch.long, device=device)
+    
+    # STEP 1: Train base model
+    print("\n" + "-"*80)
+    print("STEP 1: Training Base Model")
+    print("-"*80)
+    base_trainer = BaseModelTrainer(model, device, args.learning_rate, args.reg_weight)
+    base_history = base_trainer.train(
+        train_edges_tensor,
+        dataset.num_users,
+        dataset.num_items,
+        num_epochs=args.num_base_epochs,
+        batch_size=args.batch_size
+    )
+    
+    # Evaluate after base training
+    print("\n" + "-"*80)
+    print("Evaluating Base Model Performance")
+    print("-"*80)
+    
     train_dataset = RecommendationDataset(train_edges, dataset.num_users, dataset.num_items)
+    adj = train_dataset.get_adjacency_matrix().to(device)
+    embeddings = model(adj)
+    
+    metrics = evaluate_model(model, embeddings, test_edges, dataset.num_users, args.eval_k, device)
+    
+    print(f"\nBase Model Metrics:")
+    print(f"  Recall@{args.eval_k}: {metrics['recall']:.4f}")
+    print(f"  NDCG@{args.eval_k}: {metrics['ndcg']:.4f}")
+    
+    # STEP 2: Pre-train influence encoder
+    print("\n" + "-"*80)
+    print("STEP 2: Pre-training Influence Encoder")
+    print("-"*80)
     
     # Initialize influence encoder
     num_nodes = dataset.num_users + dataset.num_items
@@ -182,8 +220,7 @@ def train_base_model(args, dataset, device):
         lambda_c=args.lambda_c
     )
     
-    # Pre-train the model
-    print("\nStarting pre-training...")
+    # Pre-train the influence encoder
     pretrainer = PreTrainer(model, influence_encoder, loss_fn, device)
     pretrain_history = pretrainer.pretrain(
         train_dataset,
@@ -193,21 +230,6 @@ def train_base_model(args, dataset, device):
     
     # Freeze pre-trained parameters
     influence_encoder.freeze_pretrained_params()
-    
-    # Evaluate base model
-    print("\n" + "-"*80)
-    print("Evaluating Base Model Performance")
-    print("-"*80)
-    
-    adj = train_dataset.get_adjacency_matrix().to(device)
-    embeddings = model(adj)
-    
-    # Compute metrics on test set
-    metrics = evaluate_model(model, embeddings, test_edges, dataset.num_users, args.eval_k, device)
-    
-    print(f"\nBase Model Metrics:")
-    print(f"  Recall@{args.eval_k}: {metrics['recall']:.4f}")
-    print(f"  NDCG@{args.eval_k}: {metrics['ndcg']:.4f}")
     
     # Save checkpoint if requested
     if args.save_model:
@@ -354,37 +376,41 @@ def evaluate_model(model, embeddings, test_edges, num_users, k, device):
     user_embeddings = embeddings[:num_users]
     item_embeddings = embeddings[num_users:]
     
-    # Compute all predictions
+    # Compute all predictions (keep on GPU)
     predictions = torch.matmul(user_embeddings, item_embeddings.t())
     
-    # Compute Recall@K
+    # Build test set per user
+    user_test_items = {}
+    for u, v in test_edges:
+        if u not in user_test_items:
+            user_test_items[u] = []
+        user_test_items[u].append(v)
+    
+    # Compute Recall@K and NDCG@K (vectorized where possible)
     recalls = []
     ndcgs = []
     
-    for user in set(u for u, _ in test_edges):
-        user_items = [v for u, v in test_edges if u == user]
-        if not user_items:
+    # Move to CPU only once for sorting
+    predictions_cpu = predictions.cpu()
+    
+    for user, test_items in user_test_items.items():
+        if len(test_items) == 0:
             continue
         
-        # Get top-K items for this user
-        user_scores = predictions[user]
-        top_k_items = torch.topk(user_scores, k=min(k, len(user_scores))).indices.cpu().tolist()
+        # Get predictions for this user (already on CPU)
+        user_scores = predictions_cpu[user].numpy()
+        
+        # Get top-K items
+        top_k_items = user_scores.argsort()[-k:][::-1].tolist()
         
         # Recall@K
-        hits = len(set(user_items) & set(top_k_items))
-        recall = hits / len(user_items)
+        hits = len(set(test_items) & set(top_k_items))
+        recall = hits / min(len(test_items), k)
         recalls.append(recall)
         
         # NDCG@K
-        dcg = 0.0
-        idcg = 0.0
-        
-        for i, item in enumerate(top_k_items):
-            if item in user_items:
-                dcg += 1.0 / np.log2(i + 2)
-        
-        for i in range(min(len(user_items), k)):
-            idcg += 1.0 / np.log2(i + 2)
+        dcg = sum(1.0 / np.log2(i + 2) for i, item in enumerate(top_k_items) if item in test_items)
+        idcg = sum(1.0 / np.log2(i + 2) for i in range(min(len(test_items), k)))
         
         ndcg = dcg / idcg if idcg > 0 else 0.0
         ndcgs.append(ndcg)

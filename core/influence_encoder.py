@@ -33,13 +33,14 @@ class InfluenceEncoder(nn.Module):
     def reset_parameters(self):
         # Initialize with small values around 0 as mentioned in paper
         nn.init.normal_(self.H0, mean=0.0, std=0.01)
-        nn.init.normal_(self.W_eta, mean=0.0, std=0.01)
+        nn.init.constant_(self.W_eta, 0.01)  # Small constant instead of normal
         
-        # Initialize MLP with identity-like transformation
+        # Initialize MLP layers properly
         for layer in self.mlp:
             if isinstance(layer, nn.Linear):
-                nn.init.eye_(layer.weight)
-                nn.init.zeros_(layer.bias)
+                # Use Xavier initialization for better stability
+                nn.init.xavier_uniform_(layer.weight, gain=0.1)
+                nn.init.constant_(layer.bias, 0.0)
     
     def forward(self, A_delta, E_original):
         """
@@ -49,12 +50,29 @@ class InfluenceEncoder(nn.Module):
         Returns:
             E0_updated: Updated 0-layer embeddings [num_nodes, embedding_dim]
         """
-        # Compute degree matrix for A_delta
-        degree = torch.sum(A_delta, dim=1)
-        D_delta_sqrt_inv = torch.diag(1.0 / torch.sqrt(degree + 1e-8))
+        # Check if A_delta is empty or all zeros
+        if A_delta.is_sparse:
+            degree = torch.sparse.sum(A_delta, dim=1).to_dense()
+        else:
+            degree = torch.sum(A_delta, dim=1)
         
-        # Normalized adjacency (Eq. 15)
-        A_norm = D_delta_sqrt_inv @ A_delta @ D_delta_sqrt_inv
+        # If no edges, return original embeddings
+        if degree.sum() == 0:
+            return E_original.clone()
+        
+        # Safe degree normalization with better epsilon handling
+        degree_inv_sqrt = torch.pow(degree + 1e-10, -0.5)
+        degree_inv_sqrt = torch.clamp(degree_inv_sqrt, min=0.0, max=1e10)
+        degree_inv_sqrt[torch.isnan(degree_inv_sqrt)] = 0.0
+        degree_inv_sqrt[torch.isinf(degree_inv_sqrt)] = 0.0
+        
+        # Normalized adjacency using element-wise multiplication
+        A_norm = A_delta * degree_inv_sqrt.view(-1, 1) * degree_inv_sqrt.view(1, -1)
+        
+        # Check for NaN in normalized matrix
+        if torch.isnan(A_norm).any():
+            print("Warning: NaN detected in normalized adjacency matrix")
+            A_norm = torch.nan_to_num(A_norm, nan=0.0, posinf=0.0, neginf=0.0)
         
         # Compute H (Influence Estimation Matrix)
         H = self.H0
@@ -72,6 +90,11 @@ class InfluenceEncoder(nn.Module):
         delta_E0 = -E_w + H_final
         delta_E0_processed = self.mlp(delta_E0)
         E0_updated = delta_E0_processed + E_original
+        
+        # Safety check for NaN
+        if torch.isnan(E0_updated).any():
+            print("Warning: NaN detected in updated embeddings, returning original")
+            return E_original.clone()
         
         return E0_updated
     

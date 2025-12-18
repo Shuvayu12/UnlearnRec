@@ -376,8 +376,9 @@ def evaluate_model(model, embeddings, test_edges, num_users, k, device):
     user_embeddings = embeddings[:num_users]
     item_embeddings = embeddings[num_users:]
     
-    # Compute all predictions (keep on GPU)
-    predictions = torch.matmul(user_embeddings, item_embeddings.t())
+    # Compute all predictions (keep on GPU, no grad needed)
+    with torch.no_grad():
+        predictions = torch.matmul(user_embeddings, item_embeddings.t())
     
     # Build test set per user
     user_test_items = {}
@@ -390,8 +391,8 @@ def evaluate_model(model, embeddings, test_edges, num_users, k, device):
     recalls = []
     ndcgs = []
     
-    # Move to CPU only once for sorting
-    predictions_cpu = predictions.cpu()
+    # Move to CPU only once for sorting (detach if needed)
+    predictions_cpu = predictions.detach().cpu()
     
     for user, test_items in user_test_items.items():
         if len(test_items) == 0:

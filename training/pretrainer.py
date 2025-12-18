@@ -34,7 +34,8 @@ class PreTrainer:
                 dataset.all_edges, 
                 ratio=unlearn_ratio
             )
-            remaining_edges = [e for e in dataset.all_edges if e not in unlearn_edges]
+            unlearn_edges_set = {tuple(edge) for edge in unlearn_edges}  # Set for faster lookups
+            remaining_edges = [e for e in dataset.all_edges if tuple(e) not in unlearn_edges_set]
             
             # Construct matrices
             A_delta = self._construct_A_delta(unlearn_edges, dataset.num_users, dataset.num_items)

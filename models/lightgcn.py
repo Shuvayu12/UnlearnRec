@@ -12,9 +12,18 @@ class LightGCN(BaseGNN):
     
     def _normalize_adjacency(self, adjacency_matrix):
         """Normalize adjacency matrix by degree (D^-0.5 * A * D^-0.5)"""
-        # Check if already normalized (cache)
-        adj_hash = hash(adjacency_matrix.data_ptr())
-        if self._cached_norm_adj is not None and self._cached_adj_hash == adj_hash:
+        # Create a hash for caching (handle both sparse and dense tensors)
+        try:
+            if adjacency_matrix.is_sparse:
+                # For sparse tensors, use shape and number of nonzeros
+                adj_hash = hash((adjacency_matrix.shape, adjacency_matrix._nnz(), id(adjacency_matrix)))
+            else:
+                adj_hash = hash(adjacency_matrix.data_ptr())
+        except:
+            # Fallback: disable caching for this matrix
+            adj_hash = None
+        
+        if adj_hash is not None and self._cached_norm_adj is not None and self._cached_adj_hash == adj_hash:
             return self._cached_norm_adj
         
         # Use sparse format if matrix is sparse enough
@@ -46,9 +55,11 @@ class LightGCN(BaseGNN):
             # Element-wise multiplication instead of diagonal matrix
             normalized_adj = adjacency_matrix * degree_inv_sqrt.view(-1, 1) * degree_inv_sqrt.view(1, -1)
         
-        # Cache for reuse
-        self._cached_norm_adj = normalized_adj
-        self._cached_adj_hash = adj_hash
+        # Cache for reuse (only if hashing succeeded)
+        if adj_hash is not None:
+            self._cached_norm_adj = normalized_adj
+            self._cached_adj_hash = adj_hash
+        
         return normalized_adj
     
     def forward(self, adjacency_matrix):

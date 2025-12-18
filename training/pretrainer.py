@@ -88,10 +88,15 @@ class PreTrainer:
         num_nodes = num_users + num_items
         A_delta = torch.zeros((num_nodes, num_nodes), device=self.device)
         
-        for u, v in unlearn_edges:
-            v_node = v + num_users
-            A_delta[u, v_node] = 1
-            A_delta[v_node, u] = 1
+        if len(unlearn_edges) > 0:
+            # Vectorized edge construction
+            edges_tensor = torch.tensor(unlearn_edges, device=self.device)
+            users = edges_tensor[:, 0]
+            items = edges_tensor[:, 1] + num_users
+            
+            # Set both directions at once
+            A_delta[users, items] = 1
+            A_delta[items, users] = 1
             
         return A_delta
     
@@ -100,9 +105,14 @@ class PreTrainer:
         num_nodes = num_users + num_items
         A_r = torch.zeros((num_nodes, num_nodes), device=self.device)
         
-        for u, v in remaining_edges:
-            v_node = v + num_users
-            A_r[u, v_node] = 1
-            A_r[v_node, u] = 1
+        if len(remaining_edges) > 0:
+            # Vectorized edge construction
+            edges_tensor = torch.tensor(remaining_edges, device=self.device)
+            users = edges_tensor[:, 0]
+            items = edges_tensor[:, 1] + num_users
+            
+            # Set both directions at once
+            A_r[users, items] = 1
+            A_r[items, users] = 1
             
         return A_r
